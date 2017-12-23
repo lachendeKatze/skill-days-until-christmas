@@ -19,8 +19,12 @@
 from os.path import dirname,join
 from adapt.intent import IntentBuilder
 from mycroft.skills.core import MycroftSkill
-from mycroft.util import play_mp3
-from mycroft.util.log import getLogger
+from mycroft.util import wait_while_speaking
+try: # try to use the AudioService
+    from mycroft.skills.audioservice import AudioService
+except ImportError: # backwards compatibility
+    from mycroft.util import play_mp3
+    AudioService = None
 
 #required libraries
 import time
@@ -30,13 +34,12 @@ from random import choice, sample
 
 __author__ = 'GregV', '@lachendeKatze'
 
-LOGGER = getLogger(__name__)
 
 class DaysUntilChristmasSkill(MycroftSkill):
     def __init__(self):
         super(DaysUntilChristmasSkill, self).__init__(name="DaysUntilChristmasSkill")
 	self.process = None
-
+	self.audio = None
 	self.songs = [ join(dirname(__file__), "polar_express.mp3"),
 		       join(dirname(__file__), "let_it_snow.mp3"),	
 		       join(dirname(__file__), "holly_jolly_christma.mp3"),
@@ -46,8 +49,10 @@ class DaysUntilChristmasSkill(MycroftSkill):
 		       join(dirname(__file__), "carol_of_bells.mp3")]	
 
     def initialize(self):
-        self.load_data_files(dirname(__file__))
 	self.register_intent_file('days.until.christmas.intent',self.handle_christmas)
+	if AudioService is not None:
+		self.audio = AudioService(self.emitter)
+		
 
     def handle_christmas(self,message):
 	
@@ -63,11 +68,20 @@ class DaysUntilChristmasSkill(MycroftSkill):
 	daysUntilChristmas = abs(christmasDay - today)
 	# r = requests.get('http://10.0.0.101/christmas?days=' + str(daysUntilChristmas.days))
 	self.speak("there are " + str(daysUntilChristmas.days) + " days until christmas")
-	time.sleep(3)
-	self.process = play_mp3(choice(self.songs))
+	wait_while_speaking()
+	if self.audio is not None:
+		self.audio.play(song, message.data.get("utterance", ""))
+	else:
+		self.process = play_mp3(choice(self.songs))
 	
     def stop(self):
-	pass
+	# stop playing audio
+	if self.audio is not None:
+            self.audio.stop()
+        else:
+            if self.process and self.process.poll() is None:
+                self.process.terminate()
+                self.process.wait()
 
 def create_skill():
 	return DaysUntilChristmasSkill()
